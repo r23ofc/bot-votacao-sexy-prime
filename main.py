@@ -245,8 +245,18 @@ async def send_voting_cards(chat_id: int, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("🗳 Votar", callback_data=f"vote:{model['id']}")]
         ])
 
+        face_visible = int(model["face_visible"] or 0)
+        photo_label = model["photo_label"] or "Foto principal"
+
+        if face_visible:
+            privacy_line = "✅ <b>Rosto liberado pela participante</b>"
+        else:
+            privacy_line = "🙈 <b>Modelo sigilosa</b>\nFoto publicada sem mostrar o rosto."
+
         caption = (
             f"👑 <b>{escape(model['name'])}</b>\n\n"
+            f"📸 {escape(photo_label)}\n"
+            f"{privacy_line}\n\n"
             "Clique no botão abaixo para votar nessa participante."
         )
 
@@ -682,7 +692,42 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["draft"] = {}
         await query.edit_message_text(
             "➕ <b>Adicionar modelo participante</b>\n\n"
-            "Envie agora o <b>nome da modelo</b>.",
+            "Envie agora o <b>nome da modelo</b>.\n\n"
+            "Exemplos:\n"
+            "• Bruna\n"
+            "• Modelo Sigilosa 01\n"
+            "• Participante 03",
+            parse_mode=ParseMode.HTML,
+            reply_markup=cancel_keyboard(),
+        )
+        return
+
+    if data.startswith("admin:model_face:"):
+        if context.user_data.get("flow") != "model_face":
+            return
+
+        draft = context.user_data.setdefault("draft", {})
+        option = data.split(":")[-1]
+
+        if option == "yes":
+            draft["face_visible"] = 1
+            draft["photo_label"] = "Foto principal"
+            privacy_text = "✅ Rosto liberado pela participante"
+        else:
+            draft["face_visible"] = 0
+            draft["photo_label"] = "Foto do corpo / sem rosto"
+            privacy_text = "🙈 Modelo sigilosa / sem mostrar rosto"
+
+        context.user_data["flow"] = "model_photo"
+
+        await query.edit_message_text(
+            "📸 <b>Envie agora a foto da participante</b>\n\n"
+            f"Status escolhido: <b>{privacy_text}</b>\n\n"
+            "Você pode enviar:\n"
+            "• Foto normal, se ela autorizou mostrar o rosto\n"
+            "• Foto do corpo, se ela não pode mostrar o rosto\n"
+            "• Foto cortada ou sem identificar o rosto\n\n"
+            "Essa será a foto principal usada no card de votação.",
             parse_mode=ParseMode.HTML,
             reply_markup=cancel_keyboard(),
         )
@@ -702,7 +747,12 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         buttons = []
 
         for model in models:
-            text += f"• ID {model['id']} — <b>{escape(model['name'])}</b>\n"
+            privacy_status = "✅ rosto liberado" if int(model["face_visible"] or 0) else "🙈 sigilosa/sem rosto"
+            photo_label = model["photo_label"] or "Foto principal"
+            text += (
+                f"• ID {model['id']} — <b>{escape(model['name'])}</b>\n"
+                f"  📸 {escape(photo_label)} | {privacy_status}\n"
+            )
             buttons.append([
                 InlineKeyboardButton(
                     f"🗑 Remover {model['name'][:25]}",
@@ -1036,12 +1086,25 @@ async def message_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         draft["model_name"] = name
-        context.user_data["flow"] = "model_photo"
+        context.user_data["flow"] = "model_face"
 
         await message.reply_text(
             "✅ Nome salvo.\n\n"
-            "Agora envie a <b>foto da modelo participante</b>.",
+            "Essa participante pode aparecer com o rosto no card?",
             parse_mode=ParseMode.HTML,
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("✅ Sim, rosto liberado", callback_data="admin:model_face:yes")],
+                [InlineKeyboardButton("🙈 Não, usar foto do corpo/sem rosto", callback_data="admin:model_face:no")],
+                [InlineKeyboardButton("❌ Cancelar", callback_data="admin:cancel")],
+            ]),
+        )
+        return
+
+    if flow == "model_face":
+        await message.reply_text(
+            "⚠️ Escolha uma opção nos botões acima:\n\n"
+            "✅ Sim, rosto liberado\n"
+            "🙈 Não, usar foto do corpo/sem rosto",
             reply_markup=cancel_keyboard(),
         )
         return
@@ -1056,18 +1119,26 @@ async def message_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         photo_file_id = message.photo[-1].file_id
         model_name = draft["model_name"]
+        face_visible = int(draft.get("face_visible", 1))
+        photo_label = draft.get("photo_label", "Foto principal")
 
         add_model(
             name=model_name,
             photo_file_id=photo_file_id,
+            face_visible=face_visible,
+            photo_label=photo_label,
         )
 
         context.user_data.pop("flow", None)
         context.user_data.pop("draft", None)
 
+        status = "✅ Rosto liberado" if face_visible else "🙈 Sigilosa / foto sem rosto"
+
         await message.reply_text(
             f"✅ Modelo adicionada com sucesso!\n\n"
-            f"👑 Nome: {model_name}",
+            f"👑 Nome: {model_name}\n"
+            f"📸 Tipo de foto: {photo_label}\n"
+            f"{status}",
         )
         await show_admin_panel(chat.id, context)
         return

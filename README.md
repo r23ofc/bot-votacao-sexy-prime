@@ -1,20 +1,30 @@
-# Bot de Votação Sexy Prime — V4 Healthcheck
+# Bot de Votação Sexy Prime — V5 Modelo Sigilosa
 
-Esta versão corrige o problema do cron-job.org mostrando `404 Não Encontrado`.
+Esta versão mantém a correção do healthcheck para cron-job.org e adiciona o modo de **modelo sigilosa**.
 
-Agora o bot responde:
+## Novidade principal
 
-```txt
-https://SEU-SERVICO.onrender.com/
-```
-
-com:
+Ao adicionar uma modelo participante, o bot agora pergunta:
 
 ```txt
-OK - Bot de votação ativo
+Essa participante pode aparecer com o rosto no card?
 ```
 
-Assim o cron-job.org deve marcar o teste como sucesso.
+Opções:
+
+```txt
+✅ Sim, rosto liberado
+🙈 Não, usar foto do corpo/sem rosto
+```
+
+Se você escolher a opção sigilosa, o card da votação mostra:
+
+```txt
+🙈 Modelo sigilosa
+Foto publicada sem mostrar o rosto.
+```
+
+Assim você pode usar foto do corpo, foto cortada ou foto sem identificar o rosto.
 
 ## Arquivos para subir no GitHub
 
@@ -50,19 +60,13 @@ Start Command:
 python main.py
 ```
 
-Environment Variables:
+Environment Variables permanecem as mesmas:
 
 ```txt
 BOT_TOKEN=token_do_bot
 ADMIN_IDS=7156813235,ID_DO_AMIGO
 AGENCY_NAME=Sexy Prime
 DB_PATH=bot_votacao.db
-```
-
-Se precisar, adicione manualmente:
-
-```txt
-WEBHOOK_URL=https://nome-do-seu-servico.onrender.com
 ```
 
 ## cron-job.org
@@ -78,3 +82,7 @@ Intervalo recomendado:
 ```txt
 Cada 5 minutos
 ```
+
+## Observação
+
+A migração do banco é automática. Se já existir um `bot_votacao.db`, o sistema adiciona as novas colunas sem apagar as tabelas.

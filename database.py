@@ -13,6 +13,12 @@ def connect():
     return conn
 
 
+def column_exists(cur, table: str, column: str) -> bool:
+    cur.execute(f"PRAGMA table_info({table})")
+    columns = [row["name"] for row in cur.fetchall()]
+    return column in columns
+
+
 def init_db():
     conn = connect()
     cur = conn.cursor()
@@ -45,10 +51,19 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
             photo_file_id TEXT NOT NULL,
+            face_visible INTEGER NOT NULL DEFAULT 1,
+            photo_label TEXT DEFAULT 'Foto principal',
             active INTEGER NOT NULL DEFAULT 1,
             created_at TEXT NOT NULL
         )
     """)
+
+    # Migração automática para bancos antigos.
+    if not column_exists(cur, "models", "face_visible"):
+        cur.execute("ALTER TABLE models ADD COLUMN face_visible INTEGER NOT NULL DEFAULT 1")
+
+    if not column_exists(cur, "models", "photo_label"):
+        cur.execute("ALTER TABLE models ADD COLUMN photo_label TEXT DEFAULT 'Foto principal'")
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS votes (
@@ -220,14 +235,14 @@ def clear_announcement():
 # MODELOS PARTICIPANTES
 # ==========================================================
 
-def add_model(name: str, photo_file_id: str):
+def add_model(name: str, photo_file_id: str, face_visible: int = 1, photo_label: str = "Foto principal"):
     conn = connect()
     cur = conn.cursor()
 
     cur.execute("""
-        INSERT INTO models (name, photo_file_id, active, created_at)
-        VALUES (?, ?, 1, ?)
-    """, (name, photo_file_id, now()))
+        INSERT INTO models (name, photo_file_id, face_visible, photo_label, active, created_at)
+        VALUES (?, ?, ?, ?, 1, ?)
+    """, (name, photo_file_id, int(face_visible), photo_label, now()))
 
     conn.commit()
     conn.close()
@@ -238,7 +253,7 @@ def get_active_models():
     cur = conn.cursor()
 
     cur.execute("""
-        SELECT id, name, photo_file_id, created_at
+        SELECT id, name, photo_file_id, face_visible, photo_label, created_at
         FROM models
         WHERE active = 1
         ORDER BY id DESC
@@ -254,7 +269,7 @@ def get_model(model_id: int):
     cur = conn.cursor()
 
     cur.execute("""
-        SELECT id, name, photo_file_id, active
+        SELECT id, name, photo_file_id, face_visible, photo_label, active
         FROM models
         WHERE id = ?
     """, (model_id,))
