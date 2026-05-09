@@ -1,1 +1,2 @@
-python-telegram-bot[webhooks,job-queue]>=21,<23
+python-telegram-bot[job-queue]>=21,<23
+aiohttp>=3.9

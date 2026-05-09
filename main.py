@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import re
@@ -1076,10 +1077,72 @@ async def message_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # INICIAR BOT
 # ==========================================================
 
-def main():
-    if not BOT_TOKEN or BOT_TOKEN == "COLOQUE_SEU_TOKEN_DO_BOTFATHER_AQUI":
-        raise RuntimeError("Configure o BOT_TOKEN no config.py.")
+async def run_render_webhook_server(app: Application):
+    from aiohttp import web
 
+    port = int(os.getenv("PORT", "10000"))
+    webhook_base_url = (
+        os.getenv("WEBHOOK_URL")
+        or os.getenv("RENDER_EXTERNAL_URL")
+        or ""
+    ).rstrip("/")
+
+    if not webhook_base_url:
+        raise RuntimeError("WEBHOOK_URL ou RENDER_EXTERNAL_URL não encontrado.")
+
+    webhook_path = "/telegram-webhook"
+    webhook_url = f"{webhook_base_url}{webhook_path}"
+
+    async def healthcheck(request):
+        return web.Response(
+            text="OK - Bot de votação ativo",
+            status=200,
+            content_type="text/plain",
+        )
+
+    async def telegram_webhook(request):
+        try:
+            data = await request.json()
+            update = Update.de_json(data, app.bot)
+            await app.process_update(update)
+            return web.Response(text="OK", status=200)
+        except Exception as e:
+            logging.exception("Erro ao processar webhook: %s", e)
+            return web.Response(text="Erro interno", status=500)
+
+    await app.initialize()
+    await app.bot.set_webhook(
+        url=webhook_url,
+        allowed_updates=Update.ALL_TYPES,
+        drop_pending_updates=False,
+    )
+    await app.start()
+
+    web_app = web.Application()
+    web_app.router.add_get("/", healthcheck)
+    web_app.router.add_get("/health", healthcheck)
+    web_app.router.add_get("/healthz", healthcheck)
+    web_app.router.add_post(webhook_path, telegram_webhook)
+
+    runner = web.AppRunner(web_app)
+    await runner.setup()
+
+    site = web.TCPSite(runner, host="0.0.0.0", port=port)
+    await site.start()
+
+    print(f"Servidor web iniciado na porta {port}")
+    print(f"Healthcheck ativo em: {webhook_base_url}/")
+    print(f"Webhook configurado em: {webhook_url}")
+
+    try:
+        await asyncio.Event().wait()
+    finally:
+        await app.stop()
+        await app.shutdown()
+        await runner.cleanup()
+
+
+def build_application() -> Application:
     init_db()
 
     app = Application.builder().token(BOT_TOKEN).build()
@@ -1093,36 +1156,28 @@ def main():
     app.add_handler(CommandHandler("meuid", meu_id))
 
     app.add_handler(CallbackQueryHandler(callback_router))
-
     app.add_handler(MessageHandler(filters.ALL, message_router))
 
     setup_auto_post_job(app)
 
-    port = int(os.getenv("PORT", "10000"))
+    return app
+
+
+def main():
+    if not BOT_TOKEN:
+        raise RuntimeError("Configure BOT_TOKEN nas variáveis de ambiente do Render.")
+
+    app = build_application()
+
     webhook_base_url = (
         os.getenv("WEBHOOK_URL")
         or os.getenv("RENDER_EXTERNAL_URL")
         or ""
     ).rstrip("/")
 
-    # No Render Web Service grátis, o bot precisa rodar por webhook,
-    # porque Web Service precisa abrir uma porta HTTP.
     if webhook_base_url:
-        webhook_path = "telegram-webhook"
-        webhook_url = f"{webhook_base_url}/{webhook_path}"
-
-        print(f"Servidor web iniciado na porta {port}")
-        print(f"Webhook configurado em: {webhook_url}")
-
-        app.run_webhook(
-            listen="0.0.0.0",
-            port=port,
-            url_path=webhook_path,
-            webhook_url=webhook_url,
-            allowed_updates=Update.ALL_TYPES,
-        )
+        asyncio.run(run_render_webhook_server(app))
     else:
-        # Localmente, sem Render, continua funcionando por polling no CMD.
         print("WEBHOOK_URL/RENDER_EXTERNAL_URL não encontrado.")
         print("Rodando localmente via polling...")
         app.run_polling(allowed_updates=Update.ALL_TYPES)

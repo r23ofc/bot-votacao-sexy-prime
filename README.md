@@ -1,8 +1,24 @@
-# Bot de Votação Sexy Prime — V3 Webhook Free Render
+# Bot de Votação Sexy Prime — V4 Healthcheck
 
-Esta versão foi adaptada para rodar como **Web Service grátis** no Render usando webhook.
+Esta versão corrige o problema do cron-job.org mostrando `404 Não Encontrado`.
 
-## Arquivos
+Agora o bot responde:
+
+```txt
+https://SEU-SERVICO.onrender.com/
+```
+
+com:
+
+```txt
+OK - Bot de votação ativo
+```
+
+Assim o cron-job.org deve marcar o teste como sucesso.
+
+## Arquivos para subir no GitHub
+
+Suba somente estes arquivos soltos:
 
 - `main.py`
 - `database.py`
@@ -11,18 +27,16 @@ Esta versão foi adaptada para rodar como **Web Service grátis** no Render usan
 - `Procfile`
 - `README.md`
 
+Não envie:
+
+- `.zip`
+- `.pyc`
+- `__pycache__`
+- `bot_votacao.db`
+
 ## Render
 
-Crie como:
-
-```txt
-New
-Web Service
-```
-
-Não use Background Worker se quiser rodar grátis.
-
-## Configuração no Render
+Use como Web Service Free.
 
 Build Command:
 
@@ -36,15 +50,7 @@ Start Command:
 python main.py
 ```
 
-Instance Type:
-
-```txt
-Free
-```
-
-## Environment Variables
-
-Adicione:
+Environment Variables:
 
 ```txt
 BOT_TOKEN=token_do_bot
@@ -53,16 +59,22 @@ AGENCY_NAME=Sexy Prime
 DB_PATH=bot_votacao.db
 ```
 
-Você não precisa adicionar `WEBHOOK_URL` se o Render preencher automaticamente `RENDER_EXTERNAL_URL`.
-
-Se o webhook não funcionar, adicione manualmente:
+Se precisar, adicione manualmente:
 
 ```txt
 WEBHOOK_URL=https://nome-do-seu-servico.onrender.com
 ```
 
-## Importante
+## cron-job.org
 
-No plano grátis do Render, o serviço pode dormir quando fica sem tráfego.
-Quando dormir, banco SQLite local e jobs automáticos podem ser perdidos ou atrasar.
-Para produção real, use plano pago com disco persistente ou banco externo.
+Use a URL raiz:
+
+```txt
+https://nome-do-seu-servico.onrender.com/
+```
+
+Intervalo recomendado:
+
+```txt
+Cada 5 minutos
+```
