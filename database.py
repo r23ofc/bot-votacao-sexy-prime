@@ -29,10 +29,19 @@ def init_db():
             chat_id INTEGER NOT NULL UNIQUE,
             title TEXT,
             active INTEGER NOT NULL DEFAULT 1,
+            last_announcement_message_id INTEGER,
+            last_announcement_at TEXT,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         )
     """)
+
+    # Migração automática para bancos antigos.
+    if not column_exists(cur, "groups", "last_announcement_message_id"):
+        cur.execute("ALTER TABLE groups ADD COLUMN last_announcement_message_id INTEGER")
+
+    if not column_exists(cur, "groups", "last_announcement_at"):
+        cur.execute("ALTER TABLE groups ADD COLUMN last_announcement_at TEXT")
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS announcement (
@@ -174,7 +183,7 @@ def get_active_groups():
     cur = conn.cursor()
 
     cur.execute("""
-        SELECT chat_id, title
+        SELECT chat_id, title, last_announcement_message_id, last_announcement_at
         FROM groups
         WHERE active = 1
         ORDER BY id DESC
@@ -183,6 +192,38 @@ def get_active_groups():
     rows = cur.fetchall()
     conn.close()
     return rows
+
+
+def save_last_announcement_message(chat_id: int, message_id: int):
+    conn = connect()
+    cur = conn.cursor()
+
+    cur.execute("""
+        UPDATE groups
+        SET last_announcement_message_id = ?,
+            last_announcement_at = ?,
+            updated_at = ?
+        WHERE chat_id = ?
+    """, (int(message_id), now(), now(), int(chat_id)))
+
+    conn.commit()
+    conn.close()
+
+
+def clear_last_announcement_message(chat_id: int):
+    conn = connect()
+    cur = conn.cursor()
+
+    cur.execute("""
+        UPDATE groups
+        SET last_announcement_message_id = NULL,
+            last_announcement_at = NULL,
+            updated_at = ?
+        WHERE chat_id = ?
+    """, (now(), int(chat_id)))
+
+    conn.commit()
+    conn.close()
 
 
 # ==========================================================

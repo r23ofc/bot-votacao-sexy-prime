@@ -27,6 +27,8 @@ from database import (
     save_group,
     mark_group_inactive,
     get_active_groups,
+    save_last_announcement_message,
+    clear_last_announcement_message,
     save_announcement,
     get_announcement,
     clear_announcement,
@@ -89,6 +91,7 @@ def admin_keyboard():
         [InlineKeyboardButton("➕ Adicionar modelo participante", callback_data="admin:add_model")],
         [InlineKeyboardButton("👑 Ver modelos participantes", callback_data="admin:list_models")],
         [InlineKeyboardButton("🚀 Enviar anúncio agora para grupos", callback_data="admin:send_ad")],
+        [InlineKeyboardButton("🧹 Apagar último anúncio dos grupos", callback_data="admin:delete_last_ads")],
         [InlineKeyboardButton("🏆 Ver resultado da votação", callback_data="admin:ranking")],
         [InlineKeyboardButton("🗑 Resetar votos", callback_data="admin:reset_confirm")],
         [InlineKeyboardButton("👀 Ver votação como usuário", callback_data="admin:view_vote")],
@@ -332,31 +335,75 @@ async def send_announcement_to_chat(
     }
 
 
-async def send_announcement_to_all_groups(context: ContextTypes.DEFAULT_TYPE, pin_message: bool = True):
+async def delete_previous_announcement_from_group(chat_id: int, context: ContextTypes.DEFAULT_TYPE, message_id):
+    if not message_id:
+        return "none"
+
+    try:
+        await context.bot.delete_message(
+            chat_id=chat_id,
+            message_id=int(message_id),
+        )
+        clear_last_announcement_message(chat_id)
+        return "deleted"
+    except TelegramError:
+        # Pode falhar se a mensagem já foi apagada, se for antiga demais,
+        # ou se o bot não tiver permissão de apagar mensagens.
+        clear_last_announcement_message(chat_id)
+        return "failed"
+
+
+async def send_announcement_to_all_groups(
+    context: ContextTypes.DEFAULT_TYPE,
+    pin_message: bool = True,
+    delete_previous: bool = True,
+):
     announcement = get_announcement()
     groups = get_active_groups()
 
     if not announcement:
-        return 0, 0, 0, 0, "Nenhum anúncio foi configurado ainda."
+        return 0, 0, 0, 0, 0, 0, "Nenhum anúncio foi configurado ainda."
 
     if not groups:
-        return 0, 0, 0, 0, "Nenhum grupo registrado ainda."
+        return 0, 0, 0, 0, 0, 0, "Nenhum grupo registrado ainda."
 
     sent = 0
     failed = 0
     pinned = 0
     pin_failed = 0
+    deleted = 0
+    delete_failed = 0
 
     for group in groups:
+        chat_id = group["chat_id"]
+
+        if delete_previous:
+            delete_status = await delete_previous_announcement_from_group(
+                chat_id=chat_id,
+                context=context,
+                message_id=group["last_announcement_message_id"],
+            )
+
+            if delete_status == "deleted":
+                deleted += 1
+            elif delete_status == "failed":
+                delete_failed += 1
+
         try:
             result = await send_announcement_to_chat(
-                group["chat_id"],
+                chat_id,
                 context,
                 announcement,
                 pin_message=pin_message,
             )
 
             sent += 1
+
+            if result["message"]:
+                save_last_announcement_message(
+                    chat_id=chat_id,
+                    message_id=result["message"].message_id,
+                )
 
             if result["pin_ok"]:
                 pinned += 1
@@ -366,7 +413,38 @@ async def send_announcement_to_all_groups(context: ContextTypes.DEFAULT_TYPE, pi
         except TelegramError:
             failed += 1
 
-    return sent, failed, pinned, pin_failed, None
+    return sent, failed, pinned, pin_failed, deleted, delete_failed, None
+
+
+async def delete_last_announcements_from_all_groups(context: ContextTypes.DEFAULT_TYPE):
+    groups = get_active_groups()
+
+    if not groups:
+        return 0, 0, 0, "Nenhum grupo registrado ainda."
+
+    deleted = 0
+    failed = 0
+    empty = 0
+
+    for group in groups:
+        if not group["last_announcement_message_id"]:
+            empty += 1
+            continue
+
+        status = await delete_previous_announcement_from_group(
+            chat_id=group["chat_id"],
+            context=context,
+            message_id=group["last_announcement_message_id"],
+        )
+
+        if status == "deleted":
+            deleted += 1
+        elif status == "failed":
+            failed += 1
+        else:
+            empty += 1
+
+    return deleted, failed, empty, None
 
 
 async def ranking_text():
@@ -432,9 +510,10 @@ def setup_auto_post_job(application: Application):
 
 
 async def auto_post_announcement_job(context: ContextTypes.DEFAULT_TYPE):
-    sent, failed, pinned, pin_failed, error = await send_announcement_to_all_groups(
+    sent, failed, pinned, pin_failed, deleted, delete_failed, error = await send_announcement_to_all_groups(
         context,
         pin_message=True,
+        delete_previous=True,
     )
 
     if error:
@@ -442,7 +521,9 @@ async def auto_post_announcement_job(context: ContextTypes.DEFAULT_TYPE):
         return
 
     logging.info(
-        "Auto post enviado. Enviados=%s Falhas=%s Fixados=%s Falhas ao fixar=%s",
+        "Auto post enviado. Apagados=%s Falhas ao apagar=%s Enviados=%s Falhas=%s Fixados=%s Falhas ao fixar=%s",
+        deleted,
+        delete_failed,
         sent,
         failed,
         pinned,
@@ -785,11 +866,14 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if data == "admin:send_ad":
-        await query.edit_message_text("⏳ Enviando anúncio para os grupos cadastrados e fixando a mensagem...")
+        await query.edit_message_text(
+            "⏳ Apagando o último anúncio antigo, enviando o novo e fixando a mensagem..."
+        )
 
-        sent, failed, pinned, pin_failed, error = await send_announcement_to_all_groups(
+        sent, failed, pinned, pin_failed, deleted, delete_failed, error = await send_announcement_to_all_groups(
             context,
             pin_message=True,
+            delete_previous=True,
         )
 
         if error:
@@ -800,12 +884,37 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         await query.message.reply_text(
-            f"✅ Anúncio enviado.\n\n"
-            f"📨 Enviados: {sent}\n"
-            f"📌 Fixados: {pinned}\n"
+            f"✅ Anúncio atualizado nos grupos.\n\n"
+            f"🧹 Últimos anúncios apagados: {deleted}\n"
+            f"⚠️ Falhas ao apagar: {delete_failed}\n"
+            f"📨 Novos enviados: {sent}\n"
+            f"📌 Novos fixados: {pinned}\n"
             f"⚠️ Falhas ao enviar: {failed}\n"
             f"⚠️ Falhas ao fixar: {pin_failed}\n\n"
-            "Obs: para fixar, o bot precisa ser admin do grupo com permissão de fixar mensagens.",
+            "Obs: para apagar/fixar, o bot precisa ser admin do grupo com permissão de apagar e fixar mensagens.\n"
+            "A primeira postagem após esta atualização só será salva; a partir da próxima, ela já apaga a anterior automaticamente.",
+            reply_markup=back_keyboard(),
+        )
+        return
+
+    if data == "admin:delete_last_ads":
+        await query.edit_message_text("⏳ Apagando o último anúncio salvo em cada grupo...")
+
+        deleted, failed, empty, error = await delete_last_announcements_from_all_groups(context)
+
+        if error:
+            await query.message.reply_text(
+                f"⚠️ {error}",
+                reply_markup=back_keyboard(),
+            )
+            return
+
+        await query.message.reply_text(
+            f"🧹 Limpeza concluída.\n\n"
+            f"✅ Apagados: {deleted}\n"
+            f"⚠️ Falhas ao apagar: {failed}\n"
+            f"➖ Grupos sem anúncio salvo: {empty}\n\n"
+            "Obs: só dá para apagar anúncios que foram enviados depois desta atualização, porque agora o bot salva o ID da última mensagem.",
             reply_markup=back_keyboard(),
         )
         return

@@ -1,30 +1,43 @@
-# Bot de Votação Sexy Prime — V5 Modelo Sigilosa
+# Bot de Votação Sexy Prime — V6 Apagar Último Anúncio
 
-Esta versão mantém a correção do healthcheck para cron-job.org e adiciona o modo de **modelo sigilosa**.
+Esta versão mantém tudo da V5 e adiciona:
 
-## Novidade principal
+- Antes de postar um novo anúncio, o bot tenta apagar o último anúncio que ele postou naquele grupo.
+- Depois envia o novo anúncio.
+- Depois fixa a nova mensagem.
+- Novo botão no painel: `🧹 Apagar último anúncio dos grupos`.
 
-Ao adicionar uma modelo participante, o bot agora pergunta:
+## Como funciona
 
-```txt
-Essa participante pode aparecer com o rosto no card?
-```
-
-Opções:
-
-```txt
-✅ Sim, rosto liberado
-🙈 Não, usar foto do corpo/sem rosto
-```
-
-Se você escolher a opção sigilosa, o card da votação mostra:
+Quando você clicar em:
 
 ```txt
-🙈 Modelo sigilosa
-Foto publicada sem mostrar o rosto.
+🚀 Enviar anúncio agora para grupos
 ```
 
-Assim você pode usar foto do corpo, foto cortada ou foto sem identificar o rosto.
+o bot faz:
+
+```txt
+1. Apaga o último anúncio salvo naquele grupo
+2. Envia o anúncio novo
+3. Salva o ID da nova mensagem
+4. Fixa a nova mensagem
+```
+
+No automático acontece a mesma coisa.
+
+## Importante
+
+A primeira postagem depois desta atualização apenas será salva no banco.
+A partir da próxima postagem, o bot já conseguirá apagar a anterior automaticamente.
+
+Para apagar/fixar mensagens, o bot precisa estar como admin do grupo com permissões para:
+
+```txt
+Enviar mensagens
+Apagar mensagens
+Fixar mensagens
+```
 
 ## Arquivos para subir no GitHub
 
@@ -60,7 +73,7 @@ Start Command:
 python main.py
 ```
 
-Environment Variables permanecem as mesmas:
+Environment Variables continuam iguais:
 
 ```txt
 BOT_TOKEN=token_do_bot
@@ -69,20 +82,9 @@ AGENCY_NAME=Sexy Prime
 DB_PATH=bot_votacao.db
 ```
 
-## cron-job.org
+## Migração automática
 
-Use a URL raiz:
+O banco será atualizado automaticamente com as novas colunas:
 
-```txt
-https://nome-do-seu-servico.onrender.com/
-```
-
-Intervalo recomendado:
-
-```txt
-Cada 5 minutos
-```
-
-## Observação
-
-A migração do banco é automática. Se já existir um `bot_votacao.db`, o sistema adiciona as novas colunas sem apagar as tabelas.
+- `last_announcement_message_id`
+- `last_announcement_at`
